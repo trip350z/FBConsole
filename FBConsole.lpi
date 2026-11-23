@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <ProjectOptions>
+    <Version Value="12"/>
+    <General><MainUnit Value="0"/><Title Value="FBConsole"/><UseAppBundle Value="False"/></General>
+    <RequiredPackages Count="3"><Item1><PackageName Value="LCL"/></Item1><Item2><PackageName Value="SynEdit"/></Item2><Item3><PackageName Value="Printer4Lazarus"/></Item3></RequiredPackages>
+    <Units Count="26">
+      <Unit0><Filename Value="FBConsole.lpr"/><IsPartOfProject Value="True"/></Unit0>
+      <Unit1><Filename Value="MainForm.pas"/><IsPartOfProject Value="True"/></Unit1>
+      <Unit2><Filename Value="FBSession.pas"/><IsPartOfProject Value="True"/></Unit2>
+      <Unit3><Filename Value="ConnectionSettings.pas"/><IsPartOfProject Value="True"/></Unit3>
+      <Unit4><Filename Value="ConnectionDialog.pas"/><IsPartOfProject Value="True"/></Unit4>
+      <Unit5><Filename Value="LoginDialog.pas"/><IsPartOfProject Value="True"/></Unit5>
+      <Unit6><Filename Value="TableWindow.pas"/><IsPartOfProject Value="True"/></Unit6>
+      <Unit7><Filename Value="TableMetadata.pas"/><IsPartOfProject Value="True"/></Unit7>
+      <Unit8><Filename Value="InspectorWindow.pas"/><IsPartOfProject Value="True"/></Unit8>
+      <Unit9><Filename Value="FirebirdServices.pas"/><IsPartOfProject Value="True"/></Unit9>
+      <Unit10><Filename Value="ServiceWindow.pas"/><IsPartOfProject Value="True"/></Unit10>
+      <Unit11><Filename Value="ConsoleImages.pas"/><IsPartOfProject Value="True"/></Unit11>
+      <Unit12><Filename Value="StatementTemplates.pas"/><IsPartOfProject Value="True"/></Unit12>
+      <Unit13><Filename Value="DatabaseMetadata.pas"/><IsPartOfProject Value="True"/></Unit13>
+      <Unit14><Filename Value="MetadataWindow.pas"/><IsPartOfProject Value="True"/></Unit14>
+      <Unit15><Filename Value="BackupRestoreDialog.pas"/><IsPartOfProject Value="True"/></Unit15>
+      <Unit16><Filename Value="DatabaseCreateDialog.pas"/><IsPartOfProject Value="True"/></Unit16>
+      <Unit17><Filename Value="DatabaseAdmin.pas"/><IsPartOfProject Value="True"/></Unit17>
+      <Unit18><Filename Value="ServerPropertiesDialog.pas"/><IsPartOfProject Value="True"/></Unit18>
+      <Unit19><Filename Value="ServerSession.pas"/><IsPartOfProject Value="True"/></Unit19>
+      <Unit20><Filename Value="ServerRegisterDialog.pas"/><IsPartOfProject Value="True"/></Unit20>
+      <Unit21><Filename Value="UserInfoDialog.pas"/><IsPartOfProject Value="True"/></Unit21>
+      <Unit22><Filename Value="DatabasePropertiesDialog.pas"/><IsPartOfProject Value="True"/></Unit22>
+      <Unit23><Filename Value="AppTheme.pas"/><IsPartOfProject Value="True"/></Unit23>
+      <Unit24><Filename Value="AboutDialog.pas"/><IsPartOfProject Value="True"/></Unit24>
+      <Unit25><Filename Value="FirebirdScriptParser.pas"/><IsPartOfProject Value="True"/></Unit25>
+      <Unit26><Filename Value="BlobViewer.pas"/><IsPartOfProject Value="True"/></Unit26>
+    </Units>
+  </ProjectOptions>
+  <CompilerOptions><Version Value="11"/>
+    <SearchPaths><UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)/$(LCLWidgetType)"/></SearchPaths>
+    <Target><Filename Value="bin/FBConsole-0.3.79"/></Target>
+    <Linking><Options><Win32><GraphicApplication Value="True"/></Win32></Options></Linking>
+  </CompilerOptions>
+</CONFIG>
+
+
+
+
+
+
