@@ -2,11 +2,18 @@
 
 Firebird 5のWindows / Linux向けデータベース管理ツールです。Lazarus / Free Pascalで開発しています。
 
-**0.3.79 開発版** — 作成 164SYSTEMS / 開発支援 OpenAI Codex
+**0.3.79 UI更新1（開発版）** — 作成 164SYSTEMS / 開発支援 OpenAI Codex
 
 ## ダウンロード
 
-[Releases](https://github.com/trip350z/FBConsole/releases)から取得してください。
+今回のWindows版は [0.3.79 UI更新1](https://github.com/trip350z/FBConsole/releases/tag/v0.3.79-ui1) から取得してください。ZIPを展開し、`FBConsole.exe`を実行します。Firebird 5の64ビットクライアントは別途必要です。
+
+| 最新の配布ファイル | 内容 |
+| --- | --- |
+| FBConsole-0.3.79-ui1-win64.zip | 今回の画面改善を反映したWindows 64ビット版。本体、説明書、確認用画面画像を同梱 |
+| SHA256SUMS.txt | UI更新版のZIPと画像のハッシュ |
+
+既存のWindowsセットアップ、Linux版、日本語PDFガイドは [0.3.79リリース](https://github.com/trip350z/FBConsole/releases/tag/v0.3.79) で配布しています。これらはUI更新前の版です。今回のUI更新版についてはWindowsでビルドと実画面を確認しており、Linuxのビルド・表示確認は未実施です。
 
 | 配布ファイル | 内容 |
 | --- | --- |
@@ -14,6 +21,21 @@ Firebird 5のWindows / Linux向けデータベース管理ツールです。Laza
 | FBConsole-0.3.79-linux-x86_64-qt6.tar.gz | Linux x86_64 / Qt6版。本体、アイコン、ガイドを同梱 |
 | FBConsole_UsersGuide_ja_0.3.79.pdf | 実画面と操作説明を掲載した日本語ガイド |
 | SHA256SUMS.txt | 配布ファイルのハッシュ |
+
+## UI更新1の変更
+
+- 淡い配色と、上部ツールバー・WORKペインの角丸枠。
+- 47種類のシンプルなモノクロ操作アイコン。接続状態の印は緑（接続）／赤（未接続）。
+- コンソールメニューにオプションとハイライト設定を追加。コミット方法、画面／SQLフォント、要素別の色・文字スタイルを保存できます。
+- カラム・索引・各種制約・トリガーのタブ、列幅、行間、日本語の見出しを調整。
+- パーミッションを対象ごとの権限表に変更。GRANT/ADMIN OPTIONとカラム単位の範囲を区別します。
+- メタデータ抽出時の存在しないシステム列参照を修正。
+
+Windowsでビルド、設定の保存・復元、Firebird 5のテスト用DBで権限表・SQL・テーブルCRUDの回帰テストを確認しています。
+
+![カラムのプロパティ](docs/screenshots/property-columns.png)
+
+![パーミッション](docs/screenshots/table-permissions.png)
 
 ## 主な機能
 
@@ -51,6 +73,22 @@ cd FBConsole-0.3.79-linux-x86_64-qt6
 初回起動時の接続先は空です。設定は実行ファイルの隣の **config/connections.ini** に保存するため、実行フォルダーに書き込み権限が必要です。パスワードは保存しません。リモートDBのパスはサーバー上のパスを指定します。
 
 [日本語ユーザーズガイド](docs/FBConsole_UsersGuide_ja_0.3.79.pdf)に、画面と操作手順を掲載しています。
+
+## コンソールのオプション
+
+「コンソール → オプション」で対話型SQLの自動／手動コミット、引用符外の識別子の大文字化、画面フォントを設定できます。コミットの初期値は手動で、未確定SQLがある間はコミット方法の変更を止めます。自動コミットでは、SQLまたはスクリプトが正常終了した時点で確定します。エラー時は手動でコミット／ロールバックしてください。言語は現在Japaneseのみです。
+
+「コンソール → ハイライト・オプション」でSQLの要素別の前景・背景色、太字・斜体・下線、SQLフォントをプレビュー付きで変更できます。設定は対話型SQLとテーブルのSQL文表示へ反映します。引用符内の文字列・識別子とコメントは大文字化しません。
+
+設定は実行ファイルの隣の **config/options.ini** に保存します。「適用」は保存して開いたまま、「OK」は保存して閉じます。「キャンセル」は最後に適用してからの変更を破棄します。テーブル画面の編集トランザクションは独立しています。
+
+## テーブルのプロパティとパーミッション
+
+プロパティ内のカラム・インデックス・各種制約・トリガーは、余白と行間を広げ、内容に合わせた列幅と日本語の見出しで表示します。列幅は手動でも調整できます。長いカラム定義やSQLはセル／行のヒントでも確認できます。
+
+パーミッションは対象ごとに **Object / Select / Delete / Insert / Update / Reference / Execute / Member Of** を横並びで表示します。明示的に付与された権限を `Y`、GRANT OPTION付きの付与を鍵印で示します。権限または再付与の範囲にカラム指定がある場合は `Y*` とし、対象カラムと付与者をヒントで確認できます。Member Ofには、その対象が直接所属するロールを表示し、ADMIN OPTIONがあれば鍵印を付けます。同名のユーザーとロールは別の対象として扱います。ロールから継承する実効権限の展開は行いません。
+
+[Firebird 5の権限メタデータ](https://www.firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref-appx04-userprivs.html)に沿って表示しています。
 
 ## ソースからビルド
 

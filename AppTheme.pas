@@ -4,13 +4,19 @@ unit AppTheme;
 
 interface
 
-uses Classes, Controls, Forms, Graphics;
+uses Classes, Controls, Forms, Graphics, ExtCtrls;
+
+type
+  TWorkspaceSurface=class(TPanel)
+  protected
+    procedure Paint; override;
+  end;
 
 procedure ApplyModernTheme(AForm: TCustomForm);
 
 implementation
 
-uses SysUtils, Math, StdCtrls, ExtCtrls, ComCtrls, Grids, Buttons,
+uses ConsolePreferences, SysUtils, Math, StdCtrls, ComCtrls, Grids, Buttons,
   DBGrids, {$IFDEF WINDOWS}Windows, UxTheme,{$ENDIF} LCLType, LCLProc, Menus, Types, ImgList;
 
 var
@@ -60,7 +66,8 @@ var Item: TMenuItem; S: string; Img: TCustomImageList; ImgWidth, IconWidth: Inte
 begin
   if not (Sender is TMenuItem) then Exit;
   Item := TMenuItem(Sender);
-  IsMenuBarItem := Item.GetParentMenu is TMainMenu;
+  IsMenuBarItem := (Item.GetParentMenu is TMainMenu) and
+    (Item.Parent=Item.GetParentMenu.Items);
   if Item.IsLine then begin
     AWidth := Max(AWidth, 90);
     AHeight := 9;
@@ -95,10 +102,12 @@ var Item: TMenuItem; Img: TCustomImageList; ImgWidth, IconWidth, X, Y: Integer;
 begin
   if not (Sender is TMenuItem) then Exit;
   Item := TMenuItem(Sender);
-  IsMenuBarItem := Item.GetParentMenu is TMainMenu;
+  IsMenuBarItem := (Item.GetParentMenu is TMainMenu) and
+    (Item.Parent=Item.GetParentMenu.Items);
   Selected := odSelected in AState;
   Disabled := not Item.Enabled;
-  BackColor := RGBToColor(255, 255, 255);
+  if IsMenuBarItem then BackColor:=ThemeHeader
+  else BackColor := RGBToColor(255, 255, 255);
   TextColor := RGBToColor(32, 36, 42);
   LineColor := RGBToColor(218, 224, 231);
   if Selected then BackColor := RGBToColor(220, 235, 250);
@@ -169,7 +178,7 @@ end;
 procedure TMenuThemePainter.DrawStatusPanel(StatusBar: TStatusBar;
   Panel: TStatusPanel; const ARect: TRect);
 begin
-  StatusBar.Canvas.Brush.Color := RGBToColor(238, 243, 248);
+  StatusBar.Canvas.Brush.Color := RGBToColor(225,231,241);
   StatusBar.Canvas.Font.Color := RGBToColor(32, 36, 42);
   StatusBar.Canvas.FillRect(ARect);
   StatusBar.Canvas.TextRect(ARect, ARect.Left + 4, ARect.Top + 2, Panel.Text);
@@ -194,13 +203,41 @@ end;
 
 procedure LoadThemeColors;
 begin
-  ThemeBackground:=RGBToColor(246,248,251);
-  ThemeSurface:=RGBToColor(255,255,255);
+  ThemeBackground:=RGBToColor(196,208,225);
+  ThemeSurface:=RGBToColor(247,249,253);
   ThemeText:=RGBToColor(32,36,42);
   ThemeMuted:=RGBToColor(94,102,112);
-  ThemeHeader:=RGBToColor(238,243,248);
+  ThemeHeader:=RGBToColor(225,231,241);
   ThemeLine:=RGBToColor(214,222,231);
 end;
+
+procedure TWorkspaceSurface.Paint;
+begin
+  Canvas.Brush.Color:=ThemeBackground;
+  Canvas.FillRect(ClientRect);
+  Canvas.Pen.Color:=RGBToColor(214,222,233);
+  Canvas.Brush.Color:=Color;
+  Canvas.RoundRect(0,0,ClientWidth-1,ClientHeight-1,16,16);
+end;
+
+{$IFDEF WINDOWS}
+procedure ApplyCaptionColor(AForm:TCustomForm);
+type TSetAttribute=function(Wnd:HWND;Attribute:DWORD;Value:Pointer;Size:DWORD):LongInt; stdcall;
+var Module:HMODULE;SetAttribute:TSetAttribute;CaptionColor,TextColor:DWORD;
+begin
+  if AForm.BorderStyle=bsNone then Exit;
+  Module:=LoadLibrary('dwmapi.dll');
+  if Module=0 then Exit;
+  try
+    Pointer(SetAttribute):=GetProcAddress(Module,'DwmSetWindowAttribute');
+    if Assigned(SetAttribute) then begin
+      CaptionColor:=RGB(47,52,62);TextColor:=RGB(235,239,246);
+      SetAttribute(AForm.Handle,35,@CaptionColor,SizeOf(CaptionColor));
+      SetAttribute(AForm.Handle,36,@TextColor,SizeOf(TextColor));
+    end;
+  finally FreeLibrary(Module);end;
+end;
+{$ENDIF}
 
 {$IFDEF WINDOWS}
 procedure ApplyListViewTheme(AList:TListView);
@@ -230,7 +267,7 @@ begin
   {$ELSE}
   if KeepMonoFont then AControl.Font.Name := 'Monospace';
   {$ENDIF}
-  AControl.Font.Size := 9;
+  if AControl.Font.Size<=9 then AControl.Font.Size := 9;
   AControl.Font.Color := ThemeText;
 
   if AControl is TPanel then
@@ -242,15 +279,18 @@ begin
   begin
     TToolBar(AControl).Flat := True;
     TToolBar(AControl).ShowHint := True;
+    TToolBar(AControl).EdgeBorders:=[];
     TToolBar(AControl).Color := ThemeSurface;
   end
   else if AControl is TTreeView then
   begin
+    TTreeView(AControl).BorderStyle:=bsNone;
     TTreeView(AControl).Color := ThemeSurface;
     TTreeView(AControl).Font.Color := ThemeText;
   end
   else if AControl is TListView then
   begin
+    TListView(AControl).BorderStyle:=bsNone;
     TListView(AControl).Color := ThemeSurface;
     TListView(AControl).Font.Color := ThemeText;
     TListView(AControl).GridLines := False;
@@ -269,9 +309,9 @@ begin
     TDBGrid(AControl).Font.Color := ThemeText;
   end
   else if AControl is TCustomEdit then
-    TCustomEdit(AControl).Color := ThemeSurface
+    TCustomEdit(AControl).Color := clWhite
   else if AControl is TCustomComboBox then
-    TCustomComboBox(AControl).Color := ThemeSurface
+    TCustomComboBox(AControl).Color := clWhite
   else if AControl is TMemo then
   begin
     TMemo(AControl).Color := ThemeSurface;
@@ -318,7 +358,9 @@ begin
     end;
   if not FoundPainter then Painter := TMenuThemePainter.Create(AForm);
   Painter.ApplyToForm(AForm);
+  ApplyCaptionColor(AForm);
   {$ENDIF}
+  ApplyFormPreferences(AForm);
 end;
 
 end.

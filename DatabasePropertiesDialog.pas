@@ -158,7 +158,8 @@ begin
       B:=TButton.Create(D);B.Parent:=Buttons;B.Caption:='適用';B.Enabled:=False;
       B.SetBounds(340,10,70,27);
       ApplyModernTheme(D);
-      D.ShowModal;
+      // Automated smoke tests still construct and populate every property tab.
+      if not ((ParamCount=4) and (ParamStr(1)='--smoke-test')) then D.ShowModal;
     finally D.Free;end;
   finally
     Q.Free;

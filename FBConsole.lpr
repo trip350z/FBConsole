@@ -7,7 +7,9 @@ program FBConsole;
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   LinuxDisplay,
-  Interfaces, Forms, SysUtils, MainForm, Graphics;
+  Interfaces, Forms, SysUtils, MainForm, Graphics, PreferencesDialog;
+
+var SmokeDiagnostic:TextFile;
 
 procedure SaveMainWindow(const FileName: string);
 var
@@ -48,6 +50,7 @@ begin
     Application.Icon.LoadFromFile(ExtractFilePath(ParamStr(0))+'FBConsole.ico');
   {$ENDIF}
 
+  if (ParamCount=2) and ((ParamStr(1)='--capture-options') or (ParamStr(1)='--capture-highlights')) then begin CapturePreferenceDialog(ParamStr(1)='--capture-highlights',ExpandFileName(ParamStr(2)));Exit;end;
   if (ParamCount = 4) and (ParamStr(1) = '--smoke-test') then
   begin
     Application.CreateForm(TConsoleForm,ConsoleForm);
@@ -56,6 +59,8 @@ begin
     except
       on E: Exception do
       begin
+        AssignFile(SmokeDiagnostic,ParamStr(4)+'.error');Rewrite(SmokeDiagnostic);
+        WriteLn(SmokeDiagnostic,E.ClassName,': ',E.Message);CloseFile(SmokeDiagnostic);
         {$I-}WriteLn(StdErr, E.Message);{$I+}
         if IOResult<>0 then begin end;
         Halt(1);

@@ -6,7 +6,7 @@ const Names:array[0..ConsoleIconCount-1] of string=(
   'Exception','Role','Backup','Log','Users','Connect','Disconnect','SQL','Commit','Rollback','Properties',
   'Refresh','Server offline','Trigger','Index','Package','Restore','Sweep','Validate','CSV export','Save',
   'Open','Copy','Form','Statistics','Register','Database offline','Servers','Previous query','Next query',
-  'Search','Fetch all','Database connect');
+  'Search','Fetch all','Database connect','Create database','Register database','Query plan','Print','BLOB filter');
 var Icons:TImageList;Atlas,Icon:TBitmap;PNG:TPortableNetworkGraphic;K,X,Y:Integer;
 begin
   Application.Initialize;

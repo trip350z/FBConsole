@@ -6,7 +6,7 @@ unit MainForm;
 interface
 
 uses
-  Classes, SysUtils, Math, Forms, Controls, Graphics, StdCtrls, ExtCtrls, ComCtrls, Buttons,
+  Classes, SysUtils, Math, Forms, SynEdit, ConsolePreferences, PreferencesDialog, Controls, Graphics, StdCtrls, ExtCtrls, ComCtrls, Buttons,
   Grids, Dialogs, Menus, IniFiles, Clipbrd, LMessages, DB, SQLDB, SQLDBLib, IBConnection, FBSession,
   ConnectionSettings, ConnectionDialog, LoginDialog, TableWindow, InspectorWindow,
   FirebirdServices, ServiceWindow, BackupRestoreDialog, DatabaseCreateDialog,
@@ -48,7 +48,13 @@ type
     procedure CloseSQLClick(Sender:TObject);
     procedure SQLWindowClosing(Sender:TObject; var ACloseAction:TCloseAction);
   private
-    FSQL, FLog, FSQLLog: TMemo;
+    FSQL:TSynEdit;
+    FLog, FSQLLog: TMemo;
+    FSQLNormalizing:Boolean;
+    procedure OptionsClick(Sender:TObject);
+    procedure HighlightOptionsClick(Sender:TObject);
+    function ValidateOptions(const Value:TConsolePreferences):Boolean;
+  private
     FQueryHistory:TStringList;
     FQueryHistoryIndex:Integer;
     FQueryDraft:string;
@@ -189,6 +195,7 @@ type
     Pages:TPageControl;
     Explorer:TTreeView;
     ActiveBar:TToolBar;
+    ToolbarSurface:TWorkspaceSurface;
     RefreshQueued, FExplorerBusy:Boolean;
     procedure RefreshExplorer(Data:PtrInt);
     procedure QueueRefresh;
@@ -370,6 +377,9 @@ begin
   MenuGroup('コンソール(&C)');
   MenuAction('新しい接続／登録…', @NewConnection);
   MenuAction('接続設定を保存', @SaveProfile);
+  MenuAction('-',nil);
+  MenuAction('オプション(&O)…',@OptionsClick);
+  MenuAction('ハイライト・オプション(&H)…',@HighlightOptionsClick);
   MenuGroup('表示(&V)');
   MenuAction('インタラクティブSQL(&Q)…',@OpenSQL);
   MenuAction('クライアント情報(&L)…',@ClientInformation);
@@ -431,7 +441,8 @@ begin
   Toolbar := TToolBar.Create(Self);
   Toolbar.Parent := Self;
   Toolbar.Align := alTop;
-  Toolbar.Height := 40;
+  Toolbar.Height := 46;
+  Toolbar.BorderSpacing.Around:=5;
   Toolbar.Flat:=True;Toolbar.ButtonWidth:=34;Toolbar.ButtonHeight:=36;Toolbar.ShowHint:=True;
   Toolbar.ShowCaptions:=False;
   Toolbar.Images:=FToolbarImages;
@@ -487,12 +498,12 @@ begin
   Header := TPanel.Create(Self);
   Header.Parent := WorkPanel;
   Header.Align := alTop;
-  Header.Height := 44;
+  Header.Height := 32;
   Header.BevelOuter := bvNone;
   FHeading := TLabel.Create(Self);
   FHeading.Parent := Header;
-  FHeading.SetBounds(16, 10, 700, 26);
-  FHeading.Font.Size:=12;FHeading.Font.Style:=[fsBold];
+  FHeading.SetBounds(12, 6, 700, 24);
+  FHeading.Font.Size:=10;FHeading.Font.Style:=[fsBold];
   FHeading.Caption := '登録されたサーバーとデータベース';
   FList := TListView.Create(Self);
   FList.Parent := WorkPanel;
@@ -671,11 +682,11 @@ begin
   FBuilderGrid.ColWidths[6]:=85;
   FBuilderGrid.OnSetEditText:=@BuilderGridChanged;
 
-  FSQL := TMemo.Create(Self);
+  FSQL := TSynEdit.Create(Self);
+  FSQL.Gutter.Visible:=False;
   FSQL.Parent := FSQLSheet;
   FSQL.Align := alClient;
   FSQL.ScrollBars := ssBoth;
-  FSQL.WordWrap := False;
   FSQL.Font.Name := 'Consolas';
   FSQL.OnChange:=@SQLChanged;
   FSQLTabs.ActivePage:=FSQLSheet;
@@ -713,7 +724,7 @@ begin
 
   ApplyModernTheme(Self);
   ApplyModernTheme(FSQLWindow);
-  FHeading.Font.Size:=12;FHeading.Font.Style:=[fsBold];
+  FHeading.Font.Size:=10;FHeading.Font.Style:=[fsBold];
 
   I := TIniFile.Create(FConfig);
   try
@@ -833,7 +844,7 @@ begin
 end;
 
 constructor TConsoleHost.Create(AOwner:TComponent);
-var Divider:TSplitter;
+var Divider:TSplitter; LeftSurface,WorkSurface:TWorkspaceSurface;
 begin
   inherited CreateNew(AOwner);
   Caption:='FBConsole — Firebird 5 / 0.3.79';
@@ -841,10 +852,21 @@ begin
   Position:=poScreenCenter;
   Constraints.MinWidth:=900;
   Constraints.MinHeight:=580;
+  ToolbarSurface:=TWorkspaceSurface.Create(Self);
+  ToolbarSurface.Parent:=Self;
+  ToolbarSurface.Align:=alTop;
+  ToolbarSurface.Height:=46;
+  ToolbarSurface.BorderSpacing.Around:=5;
+  ToolbarSurface.ChildSizing.LeftRightSpacing:=6;
+  ToolbarSurface.ChildSizing.TopBottomSpacing:=4;
+  LeftSurface:=TWorkspaceSurface.Create(Self);
+  LeftSurface.Parent:=Self;LeftSurface.Align:=alLeft;LeftSurface.Width:=384;
+  LeftSurface.BevelOuter:=bvNone;LeftSurface.BorderSpacing.Around:=5;
+  LeftSurface.ChildSizing.LeftRightSpacing:=8;LeftSurface.ChildSizing.TopBottomSpacing:=8;
   Explorer:=TTreeView.Create(Self);
-  Explorer.Parent:=Self;
-  Explorer.Align:=alLeft;
-  Explorer.Width:=440;
+  Explorer.Parent:=LeftSurface;
+  Explorer.Align:=alClient;
+  Explorer.BorderStyle:=bsNone;
   Explorer.ReadOnly:=True;
   Explorer.HideSelection:=False;
   Explorer.OnSelectionChanged:=@ExplorerChanged;
@@ -853,14 +875,22 @@ begin
   Divider:=TSplitter.Create(Self);
   Divider.Parent:=Self;
   Divider.Align:=alLeft;
-  Divider.Left:=Explorer.Width;
-  Divider.ResizeControl:=Explorer;
+  Divider.Left:=LeftSurface.Width;
+  Divider.Width:=5;Divider.Beveled:=False;Divider.AutoSnap:=False;Divider.MinSize:=260;
+  Divider.ResizeControl:=LeftSurface;
+  WorkSurface:=TWorkspaceSurface.Create(Self);
+  WorkSurface.Parent:=Self;
+  WorkSurface.Align:=alClient;
+  WorkSurface.BorderSpacing.Around:=5;
+  WorkSurface.ChildSizing.LeftRightSpacing:=6;
+  WorkSurface.ChildSizing.TopBottomSpacing:=6;
   Pages:=TPageControl.Create(Self);
   Pages.ShowTabs:=False;
-  Pages.Parent:=Self;
+  Pages.Parent:=WorkSurface;
   Pages.Align:=alClient;
   Pages.OnChange:=@PageChanged;
   OnCloseQuery:=@CheckSessions;
+  ApplyModernTheme(Self);
 end;
 
 function MatchingNode(Tree:TTreeView; Source:TTreeNode; CreateMissing:Boolean):TTreeNode;
@@ -1041,10 +1071,15 @@ begin
   if (Pages.ActivePage=nil) or (Pages.ActivePage.ControlCount=0) then Exit;
   Session:=TConsoleForm(Pages.ActivePage.Controls[0]);
   if ActiveBar<>Session.FConnectTool.Parent then begin
-    if Assigned(ActiveBar) then ActiveBar.Parent:=TConsoleForm(ActiveBar.Owner);
+    if Assigned(ActiveBar) then begin
+      ActiveBar.Parent:=TConsoleForm(ActiveBar.Owner);
+      ActiveBar.Align:=alTop;
+      ActiveBar.BorderSpacing.Around:=5;
+    end;
     ActiveBar:=TToolBar(Session.FConnectTool.Parent);
-    ActiveBar.Parent:=Self;
-    ActiveBar.Align:=alTop;
+    ActiveBar.Parent:=ToolbarSurface;
+    ActiveBar.BorderSpacing.Around:=0;
+    ActiveBar.Align:=alClient;
   end;
   Explorer.Images:=Session.FImages;
   Explorer.PopupMenu:=Session.FObjects.PopupMenu;
@@ -1230,7 +1265,7 @@ begin
   Result := False;
   for K:=0 to FTables.Count-1 do
     if not TTableWindow(FTables[K]).PrepareClose then Exit;
-  if FPending and (MessageDlg('未確定のSQL',
+  if FPending and not ((ParamCount=4) and (ParamStr(1)='--smoke-test')) and (MessageDlg('未確定のSQL',
     '未確定の変更をロールバックして切断しますか？', mtConfirmation,
     [mbYes, mbNo], 0) <> mrYes) then Exit;
   FreeAndNil(FRemainingRows);
@@ -1894,7 +1929,7 @@ procedure TConsoleForm.CreateSelectSQL(Sender:TObject);
 begin
   if (FObjects.Selected=nil) or not (PtrUInt(FObjects.Selected.Data) in [1,2]) then Exit;
   FSQL.Text:='SELECT *'+LineEnding+'FROM '+QuoteIdentifier(FObjects.Selected.Text)+';';
-  FSQL.SelStart:=0;
+  FSQL.SelStart:=1;
   FSQLTabs.ActivePage:=FSQLSheet;
   OpenSQL(nil);
 end;
@@ -2620,7 +2655,15 @@ begin
 end;
 
 procedure TConsoleForm.SQLChanged(Sender:TObject);
+var Normalized:string;Caret:TPoint;
 begin
+  if FSQLNormalizing then Exit;
+  if Preferences.UpperIdentifiers then begin
+    Normalized:=UppercaseIdentifiers(FSQL.Text);
+    if Normalized<>FSQL.Text then begin Caret:=FSQL.CaretXY;FSQLNormalizing:=True;
+      try FSQL.Text:=Normalized;FSQL.CaretXY:=Caret;finally FSQLNormalizing:=False;end;
+    end;
+  end;
   if (FQueryHistoryIndex>=0) and not FQueryNavigating then begin
     FQueryHistoryIndex:=-1;FQueryDraft:='';
     UpdateQueryHistoryButtons;
@@ -2646,7 +2689,7 @@ begin
   else Exit;
   FQueryNavigating:=True;
   try FSQL.Text:=FQueryHistory[FQueryHistoryIndex];finally FQueryNavigating:=False;end;
-  FSQL.SelStart:=Length(FSQL.Text);
+  FSQL.SelStart:=Length(FSQL.Text)+1;
   UpdateQueryHistoryButtons;
 end;
 
@@ -2663,7 +2706,7 @@ begin
     try FSQL.Text:=FQueryDraft;finally FQueryNavigating:=False;end;
     FQueryDraft:='';
   end;
-  FSQL.SelStart:=Length(FSQL.Text);
+  FSQL.SelStart:=Length(FSQL.Text)+1;
   UpdateQueryHistoryButtons;
 end;
 
@@ -2824,7 +2867,7 @@ begin
   FindText:='';
   if not InputQuery('SQL内を検索','検索する文字列:',FindText) or (FindText='') then Exit;
   SQLText:=FSQL.Text;
-  StartAt:=FSQL.SelStart+FSQL.SelLength+1;
+  StartAt:=Max(FSQL.SelStart,FSQL.SelEnd);
   FoundAt:=0;
   for I:=StartAt to Length(SQLText)-Length(FindText)+1 do
     if SameText(Copy(SQLText,I,Length(FindText)),FindText) then begin FoundAt:=I;Break;end;
@@ -2835,7 +2878,7 @@ begin
     MessageDlg('SQL内を検索','文字列が見つかりません。',mtInformation,[mbOK],0);
     Exit;
   end;
-  FSQL.SetFocus;FSQL.SelStart:=FoundAt-1;FSQL.SelLength:=Length(FindText);
+  FSQL.SetFocus;FSQL.SelStart:=FoundAt;FSQL.SelEnd:=FoundAt+Length(FindText);
 end;
 
 procedure TConsoleForm.WindowMenuPopup(Sender:TObject);
@@ -2995,7 +3038,11 @@ begin
           '文数: '+IntToStr(Statements.Count)+LineEnding+
           '影響行数: '+IntToStr(TotalAffected)+LineEnding+
           '最終結果行数: '+RowsText+LineEnding+
-          '結果表示上限: '+RowLimitText+LineEnding+'トランザクション: 未確定';
+          '結果表示上限: '+RowLimitText;
+        if Preferences.AutoCommit then begin
+          if FTransaction.Active then begin if Assigned(FRemainingRows) then FTransaction.CommitRetaining else FTransaction.Commit;end;
+          FPending:=False;FSQLStats.Lines.Add('トランザクション: 自動コミット（確定済み）');Log('自動コミットしました。');
+        end else FSQLStats.Lines.Add('トランザクション: 手動コミット（未確定）');
         FResultTabs.ActivePage:=FStatsSheet;
         FSQL.Clear;
       except
@@ -3159,6 +3206,21 @@ begin
   ExecuteClick(nil);
 end;
 
+function TConsoleForm.ValidateOptions(const Value:TConsolePreferences):Boolean;
+var I:Integer;
+begin
+  Result:=True;
+  if Value.AutoCommit=Preferences.AutoCommit then Exit;
+  for I:=0 to Screen.FormCount-1 do if Screen.Forms[I] is TConsoleForm then
+    if TConsoleForm(Screen.Forms[I]).FPending then begin
+      MessageDlg('コミット方法','未確定のSQLがあります。先にコミットまたはロールバックしてください。',mtWarning,[mbOK],0);Exit(False);
+    end;
+end;
+procedure TConsoleForm.OptionsClick(Sender:TObject);
+begin ShowConsoleOptions(Self,@ValidateOptions);end;
+procedure TConsoleForm.HighlightOptionsClick(Sender:TObject);
+begin ShowHighlightOptions(Self);end;
+
 procedure TConsoleForm.AboutClick(Sender: TObject);
 begin
   ShowAboutDialog(Self);
@@ -3291,6 +3353,21 @@ begin
   ChooseHistory(FPreviousQueryTool.DropDownMenu.Items[0]);
   NextQuery(nil);
   if Trim(FSQL.Text)<>'draft' then raise Exception.Create('Smoke test: history draft');
+  RollbackClick(nil);
+  Preferences.AutoCommit:=True;
+  FSQL.Text:='INSERT INTO TX_TEST VALUES (777)';ExecuteClick(nil);
+  if FPending then raise Exception.Create('Smoke test: auto commit still pending');
+  RollbackClick(nil);Q:=NewQuery;
+  try Q.SQL.Text:='SELECT COUNT(*) FROM TX_TEST WHERE ID=777';Q.Open;if Q.Fields[0].AsInteger<>1 then raise Exception.Create('Smoke test: auto commit was rolled back');Q.Close;finally Q.Free;end;
+  FSQL.Text:='DELETE FROM TX_TEST WHERE ID=777';ExecuteClick(nil);
+  FFetchAllTool.Down:=False;
+  FSQL.Text:='SELECT FIRST 1010 A.RDB$FIELD_NAME FROM RDB$RELATION_FIELDS A CROSS JOIN RDB$RELATION_FIELDS B';ExecuteClick(nil);
+  if FPending or not Assigned(FRemainingRows) then raise Exception.Create('Smoke test: automatic commit lost the result cursor');
+  FFetchAllTool.Down:=True;FetchAllClick(nil);
+  if FResultRows<>1010 then raise Exception.Create('Smoke test: automatic commit fetch-all failed');
+  Preferences.AutoCommit:=False;
+  FSQL.Text:='INSERT INTO TX_TEST VALUES (778)';ExecuteClick(nil);RollbackClick(nil);Q:=NewQuery;
+  try Q.SQL.Text:='SELECT COUNT(*) FROM TX_TEST WHERE ID=778';Q.Open;if Q.Fields[0].AsInteger<>0 then raise Exception.Create('Smoke test: manual rollback failed');Q.Close;finally Q.Free;end;
   if not EndSession then raise Exception.Create('Smoke test: disconnect failed');
   if FSQLWindow.Visible then raise Exception.Create('Smoke test: SQL window not hidden on disconnect');
   if FObjects.Items.Count < 3 then raise Exception.Create('Smoke test: registrations lost on disconnect');

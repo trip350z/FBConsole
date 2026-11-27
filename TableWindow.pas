@@ -25,11 +25,19 @@ type
     FStatementTexts:TStatementTexts;
     FApply, FDiscard: TBitBtn;
     FImages:TImageList;
+    FRowImages:TImageList;
+    FLayoutBusy:Boolean;
     function Tab(Pages: TPageControl; const Title: string): TTabSheet;
     function Grid(ParentControl: TWinControl): TStringGrid;
     procedure AddButton(ParentControl: TWinControl; const Title: string; X, W: Integer; Handler: TNotifyEvent);
     procedure LoadGrid(G: TStringGrid; const SQL: string);
     procedure LoadMetadata;
+    procedure LayoutMetadata(Sender: TObject);
+    procedure ColumnHint(Sender: TObject; Shift: TShiftState; X,Y: Integer);
+    procedure DrawMetadataCell(Sender: TObject; ACol, ARow: Integer;
+      ARect: TRect; AState: TGridDrawState);
+    procedure DrawColumnRow(Sender: TCustomListView; Item: TListItem;
+      State: TCustomDrawState; var DefaultDraw: Boolean);
     procedure StatementChanged(Sender:TObject);
     procedure OpenData;
     procedure RefreshClick(Sender: TObject);
@@ -57,7 +65,7 @@ type
   end;
 implementation
 
-uses Math, AppTheme;
+uses Math, Types, AppTheme, TablePermissions;
 
 function TTableWindow.Tab(Pages: TPageControl; const Title: string): TTabSheet;
 begin
@@ -71,11 +79,19 @@ begin
   Result:=TStringGrid.Create(Self);
   Result.Parent:=ParentControl;
   Result.Align:=alClient;
+  Result.BorderSpacing.Around:=6;
   Result.FixedCols:=0;
   Result.RowCount:=2;
   Result.ColCount:=1;
   Result.DefaultColWidth:=160;
-  Result.Options:=Result.Options+[goColSizing,goRowSelect];
+  Result.BorderStyle:=bsNone;
+  Result.DefaultRowHeight:=28;
+  Result.DefaultDrawing:=False;
+  Result.Options:=[goColSizing,goRowSelect,goThumbTracking,goCellHints];
+  Result.ShowHint:=True;
+  Result.CellHintPriority:=chpTruncOnly;
+  Result.OnDrawCell:=@DrawMetadataCell;
+  Result.OnResize:=@LayoutMetadata;
 end;
 procedure TTableWindow.AddButton(ParentControl: TWinControl; const Title: string; X,W: Integer; Handler: TNotifyEvent);
 var B:TBitBtn;
@@ -86,7 +102,7 @@ begin
 end;
 constructor TTableWindow.CreateTable(AOwner: TComponent; Connection: TIBConnection;
   const TableName: string; IsView: Boolean);
-var T,PropertyTab:TTabSheet; Bar:TPanel; Split:TSplitter; K:Integer;
+var T,PropertyTab:TTabSheet; Bar:TPanel; Split:TSplitter; K:Integer; RowBitmap:TBitmap;
 const Names:array[1..5] of string=('インデックス','ユニーク制約','チェック制約','参照制約','トリガー');
   procedure AddDivider(AParent:TWinControl;X:Integer);
   var V:TBevel;
@@ -119,17 +135,37 @@ begin
   FStatus:=TStatusBar.Create(Self); FStatus.Parent:=Self; FStatus.SimplePanel:=True;
   FStatus.SimpleText:=Connection.DatabaseName;
   FPages:=TPageControl.Create(Self); FPages.Parent:=Self; FPages.Align:=alClient;
+  FPages.BorderSpacing.Around:=6;
   PropertyTab:=Tab(FPages,'プロパティ');
   FProperties:=TPageControl.Create(Self); FProperties.Parent:=PropertyTab; FProperties.Align:=alClient;
-  FProperties.Style:=tsFlatButtons;
+  FProperties.Style:=tsTabs;
+  FProperties.MultiLine:=True;
+  FProperties.TabHeight:=Scale96ToFont(34);
+  FProperties.TabWidth:=Scale96ToFont(128);
+  FProperties.BorderSpacing.Around:=8;
   FProperties.Images:=CreateConsoleImages(Self,16);
   FColumns:=TListView.Create(Self);
   FColumns.Parent:=Tab(FProperties,'カラム');
+  FColumns.BorderSpacing.Around:=6;
   FColumns.Align:=alClient;
   FColumns.ViewStyle:=vsReport;
   FColumns.ReadOnly:=True;
   FColumns.RowSelect:=True;
   FColumns.ColumnClick:=False;
+  FColumns.HideSelection:=False;
+  FColumns.DoubleBuffered:=True;
+  FColumns.OnCustomDrawItem:=@DrawColumnRow;
+  FColumns.ShowHint:=True;FColumns.OnMouseMove:=@ColumnHint;
+  FRowImages:=TImageList.Create(Self);
+  FRowImages.Width:=1;FRowImages.Height:=Scale96ToFont(28);
+  RowBitmap:=TBitmap.Create;
+  try
+    RowBitmap.SetSize(1,FRowImages.Height);
+    RowBitmap.Canvas.Brush.Color:=clWhite;
+    RowBitmap.Canvas.FillRect(0,0,1,FRowImages.Height);
+    FRowImages.AddMasked(RowBitmap,clWhite);
+  finally RowBitmap.Free;end;
+  FColumns.SmallImages:=FRowImages;
   for K:=1 to 5 do LoadGrid(Grid(Tab(FProperties,Names[K])),MetadataSQL(FTable,K));
   T:=Tab(FPages,'データ');
   Bar:=TPanel.Create(Self); Bar.Parent:=T; Bar.Align:=alTop; Bar.Height:=38;
@@ -162,7 +198,8 @@ begin
   AddButton(Bar,'SQLを保存…',6,120,@SaveMetadata);
   FMetadata:=TMemo.Create(Self); FMetadata.Parent:=T; FMetadata.Align:=alClient;
   FMetadata.ReadOnly:=True; FMetadata.WordWrap:=False; FMetadata.ScrollBars:=ssBoth; FMetadata.Font.Name:='Consolas';
-  LoadGrid(Grid(Tab(FPages,'パーミッション')),MetadataSQL(FTable,7));
+  T:=Tab(FPages,'パーミッション');
+  CreatePermissionView(Self,T,FConnection,FMetaTransaction,FTable);
   LoadGrid(Grid(Tab(FPages,'依存関係')),MetadataSQL(FTable,6));
   LoadGrid(Grid(Tab(FPages,'詳細')),MetadataSQL(FTable,8));
   T:=Tab(FPages,'SQL Statements');
@@ -197,28 +234,151 @@ begin
   if Assigned(FMetaTransaction) and FMetaTransaction.Active then FMetaTransaction.Rollback;
   inherited Destroy;
 end;
+function MetadataHeading(const Name: string): string;
+const
+  Keys: array[0..26] of string = ('INDEX_NAME','UNIQUE_FLAG','DESCENDING_FLAG',
+    'INACTIVE','COLUMN_NAME','COLUMN_POSITION','EXPRESSION_SQL','CONSTRAINT_NAME',
+    'CONSTRAINT_TYPE','CHECK_SQL','REFERENCED_TABLE','REFERENCED_COLUMN',
+    'UPDATE_RULE','DELETE_RULE','TRIGGER_NAME','TRIGGER_TYPE','EXECUTION_ORDER',
+    'SOURCE_SQL','DEPENDENT_NAME','OBJECT_TYPE','GRANTEE','GRANTEE_TYPE',
+    'PRIVILEGE_CODE','GRANT_OPTION','GRANTOR','OWNER_NAME','RELATION_TYPE');
+  Titles: array[0..26] of string = ('インデックス名','一意','並び順','状態',
+    'カラム名','位置','式','制約名','種類','チェック条件','参照先テーブル',
+    '参照先カラム','更新ルール','削除ルール','トリガー名','種類','実行順序',
+    'SQL定義','依存オブジェクト','種類','付与先','付与先の種類','権限',
+    '再付与','付与者','所有者','種類');
+var I: Integer;
+begin
+  for I:=Low(Keys) to High(Keys) do if SameText(Name,Keys[I]) then Exit(Titles[I]);
+  if SameText(Name,'DESCRIPTION') then Exit('説明');
+  if SameText(Name,'VIEW_SQL') then Exit('ビュー定義');
+  if SameText(Name,'SECURITY_CLASS') then Exit('セキュリティクラス');
+  Result:=Name;
+end;
+
 procedure TTableWindow.LoadGrid(G:TStringGrid; const SQL:string);
-var Q:TSQLQuery; R,C:Integer;
+var Q:TSQLQuery; R,C:Integer; Value,FieldName:string;
 begin
   Q:=TSQLQuery.Create(nil);
   try
     Q.Database:=FConnection; Q.Transaction:=FMetaTransaction; Q.SQL.Text:=SQL; Q.Open;
     G.ColCount:=Q.FieldCount;
-    for C:=0 to Q.FieldCount-1 do G.Cells[C,0]:=Q.Fields[C].FieldName;
+    for C:=0 to Q.FieldCount-1 do G.Cells[C,0]:=MetadataHeading(Q.Fields[C].FieldName);
     R:=1;
     while not Q.EOF do begin
       G.RowCount:=R+1;
-      for C:=0 to Q.FieldCount-1 do G.Cells[C,R]:=Q.Fields[C].AsString;
-      Inc(R); Q.Next;
+      for C:=0 to Q.FieldCount-1 do begin
+        Value:=Q.Fields[C].AsString;FieldName:=Q.Fields[C].FieldName;
+        begin
+          if FieldName='UNIQUE_FLAG' then begin if Value='1' then Value:='はい' else Value:='いいえ';end
+          else if FieldName='DESCENDING_FLAG' then begin if Value='1' then Value:='降順' else Value:='昇順';end
+          else if FieldName='INACTIVE' then begin if Value='1' then Value:='無効' else Value:='有効';end
+          else if (FieldName='CONSTRAINT_TYPE') and (Value='PRIMARY KEY') then Value:='主キー'
+          else if (FieldName='CONSTRAINT_TYPE') and (Value='UNIQUE') then Value:='一意';
+        end;
+        G.Cells[C,R]:=Value;
+      end;
+      // Firebird creates more than one enforcement trigger for a CHECK.
+      // Show identical definitions once, while preserving composite-key segments.
+      if (R>1)and(Q.FindField('CHECK_SQL')<>nil)and(G.Rows[R].Text=G.Rows[R-1].Text) then G.RowCount:=R
+      else Inc(R);
+      Q.Next;
     end;
-    if R=1 then G.RowCount:=2;
+    if R=1 then begin G.RowCount:=2;G.Tag:=1;G.Cells[0,1]:='該当する項目はありません';end;
   finally Q.Free; end;
 end;
+
+procedure TTableWindow.DrawMetadataCell(Sender: TObject; ACol, ARow: Integer;
+  ARect: TRect; AState: TGridDrawState);
+var G:TStringGrid; Style:TTextStyle;
+begin
+  G:=TStringGrid(Sender);
+  G.Canvas.Font.Assign(G.Font);
+  G.Canvas.Font.Color:=RGBToColor(40,49,62);
+  if ARow=0 then begin
+    G.Canvas.Brush.Color:=RGBToColor(232,237,245);
+    G.Canvas.Font.Style:=[fsBold];
+  end else if gdSelected in AState then G.Canvas.Brush.Color:=RGBToColor(220,234,252)
+  else if Odd(ARow) then G.Canvas.Brush.Color:=clWhite
+  else G.Canvas.Brush.Color:=RGBToColor(247,249,253);
+  G.Canvas.FillRect(ARect);
+  G.Canvas.Pen.Color:=RGBToColor(229,234,241);
+  G.Canvas.Line(ARect.Left,ARect.Bottom-1,ARect.Right,ARect.Bottom-1);
+  Inc(ARect.Left,Scale96ToFont(10));Dec(ARect.Right,Scale96ToFont(8));
+  Style:=G.Canvas.TextStyle;
+  Style.Alignment:=taLeftJustify;Style.Layout:=tlCenter;
+  Style.SingleLine:=True;Style.Clipping:=True;Style.EndEllipsis:=True;
+  G.Canvas.TextRect(ARect,ARect.Left,ARect.Top,G.Cells[ACol,ARow],Style);
+end;
+
+procedure TTableWindow.DrawColumnRow(Sender: TCustomListView; Item: TListItem;
+  State: TCustomDrawState; var DefaultDraw: Boolean);
+begin
+  DefaultDraw:=True;
+  if cdsSelected in State then Exit;
+  if Odd(Item.Index) then Sender.Canvas.Brush.Color:=RGBToColor(247,249,253)
+  else Sender.Canvas.Brush.Color:=clWhite;
+  Sender.Canvas.Font.Color:=RGBToColor(40,49,62);
+end;
+
+procedure TTableWindow.LayoutMetadata(Sender: TObject);
+const Minimums:array[0..5] of Integer=(150,180,110,110,180,90);
+var I,J,K,W,Total,TextHeight:Integer; G:TStringGrid; Value:string;
+begin
+  if FLoading or FLayoutBusy or not Assigned(FColumns) or (FColumns.Columns.Count<>6) then Exit;
+  FLayoutBusy:=True;
+  try
+  FColumns.Canvas.Font.Assign(FColumns.Font);
+  TextHeight:=FColumns.Canvas.TextHeight('Ag');
+  FRowImages.Height:=Max(Scale96ToFont(28),TextHeight+Scale96ToFont(12));
+  Total:=0;
+  for I:=0 to 5 do begin
+    W:=Max(Scale96ToFont(Minimums[I]),FColumns.Canvas.TextWidth(FColumns.Columns[I].Caption)+Scale96ToFont(28));
+    for J:=0 to FColumns.Items.Count-1 do begin
+      if I=0 then Value:=FColumns.Items[J].Caption else Value:=FColumns.Items[J].SubItems[I-1];
+      W:=Max(W,FColumns.Canvas.TextWidth(Value)+Scale96ToFont(28));
+    end;
+    W:=Min(W,Scale96ToFont(380));
+    FColumns.Columns[I].Width:=W;Inc(Total,W);
+  end;
+  if Total<FColumns.ClientWidth-Scale96ToFont(20) then
+    FColumns.Columns[4].Width:=FColumns.Columns[4].Width+FColumns.ClientWidth-Scale96ToFont(20)-Total;
+  for K:=0 to ComponentCount-1 do if (Components[K] is TStringGrid) and not (Components[K] is TPermissionMatrix) then begin
+    G:=TStringGrid(Components[K]);G.Canvas.Font.Assign(G.Font);
+    G.DefaultRowHeight:=Max(Scale96ToFont(28),G.Canvas.TextHeight('Ag')+Scale96ToFont(12));
+    G.RowHeights[0]:=G.DefaultRowHeight+Scale96ToFont(4);
+    Total:=0;
+    for I:=0 to G.ColCount-1 do begin
+      W:=Max(Scale96ToFont(100),G.Canvas.TextWidth(G.Cells[I,0])+Scale96ToFont(32));
+      for J:=1 to G.RowCount-1 do
+        W:=Max(W,G.Canvas.TextWidth(G.Cells[I,J])+Scale96ToFont(24));
+      if I=0 then W:=Max(W,Scale96ToFont(200));
+      W:=Min(W,Scale96ToFont(400));
+      G.ColWidths[I]:=W;Inc(Total,W);
+    end;
+    if Total<G.ClientWidth-Scale96ToFont(20) then
+      G.ColWidths[G.ColCount-1]:=G.ColWidths[G.ColCount-1]+G.ClientWidth-Scale96ToFont(20)-Total;
+  end;
+  finally FLayoutBusy:=False;end;
+end;
+
+procedure TTableWindow.ColumnHint(Sender: TObject; Shift: TShiftState; X,Y: Integer);
+var Item:TListItem; I:Integer; HintText:string;
+begin
+  Item:=FColumns.GetItemAt(X,Y);HintText:='';
+  if Assigned(Item) then begin
+    HintText:=FColumns.Columns[0].Caption+': '+Item.Caption;
+    for I:=0 to Item.SubItems.Count-1 do
+      if Item.SubItems[I]<>'' then HintText:=HintText+LineEnding+FColumns.Columns[I+1].Caption+': '+Item.SubItems[I];
+  end;
+  FColumns.Hint:=HintText;
+end;
+
 procedure TTableWindow.LoadMetadata;
 var Q:TSQLQuery; R,K:Integer; ColumnName,Line:string;
     Columns:TStatementColumns;Keys:TStringList; Item:TListItem;
-const BaseWidths:array[0..5] of Integer=(90,90,75,45,80,52);
-      Headers:array[0..5] of string=('名称','タイプ','キャラクタセット','照合','デフォルト値','Null可');
+const BaseWidths:array[0..5] of Integer=(150,180,110,110,180,90);
+      Headers:array[0..5] of string=('カラム名','データ型','文字セット','照合順序','デフォルト値','NULL許可');
 begin
   Q:=TSQLQuery.Create(nil);Keys:=TStringList.Create;Columns:=nil;
   try
@@ -239,8 +399,8 @@ begin
       Item.SubItems.Add(Q.FieldByName('CHARSET_NAME').AsString);
       Item.SubItems.Add(Q.FieldByName('COLLATION_NAME').AsString);
       Item.SubItems.Add(Q.FieldByName('DEFAULT_SOURCE').AsString);
-      if Q.FieldByName('NOT_NULL_FLAG').AsInteger=1 then Item.SubItems.Add('No')
-      else Item.SubItems.Add('Yes');
+      if Q.FieldByName('NOT_NULL_FLAG').AsInteger=1 then Item.SubItems.Add('不可')
+      else Item.SubItems.Add('許可');
       Line:='  '+QuoteName(ColumnName)+' '+FieldTypeName(Q);
       if not Q.FieldByName('COMPUTED_SOURCE').IsNull then
         Line:='  '+QuoteName(ColumnName)+' COMPUTED BY '+Q.FieldByName('COMPUTED_SOURCE').AsString
@@ -259,12 +419,6 @@ begin
       Q.Next;
       if not Q.EOF then Line:=Line+',';
       FMetadata.Lines.Add(Line); Inc(R);
-    end;
-    for K:=0 to FColumns.Columns.Count-1 do begin
-      FColumns.Columns[K].AutoSize:=True;
-      R:=FColumns.Columns[K].Width;
-      FColumns.Columns[K].AutoSize:=False;
-      FColumns.Columns[K].Width:=EnsureRange(R,Scale96ToFont(BaseWidths[K]),Scale96ToFont(280));
     end;
     FMetadata.Lines.Add(');');
     Q.Close;
@@ -381,6 +535,7 @@ end;
 procedure TTableWindow.PagesChanged(Sender:TObject);
 begin
   if (FPages.ActivePageIndex=1) and not FData.Active then OpenData;
+  LayoutMetadata(nil);
 end;
 procedure TTableWindow.SelectData;
 begin
